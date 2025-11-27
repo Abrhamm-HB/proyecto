@@ -1,76 +1,86 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useParams } from "next/navigation"
+import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { DollarSign, User, Calendar, Receipt, Printer } from "lucide-react"
+import { ArrowLeft, Printer, AlertCircle } from "lucide-react"
+import { useParams } from "next/navigation"
+import Link from "next/link"
 
-// Definición de la interfaz de datos de pago
-interface ComprobantePago {
-  PagoID: number;
-  FechaPago: string;
-  MontoPago: number;
-  MedioPago: string;
-  Concepto: string;
-  SocioNombre: string;
-  SocioApellido: string;
-  SocioRUT: string;
-  SocioEmail: string;
+interface Comprobante {
+  PagoID: number
+  FechaPago: string
+  Monto: number
+  MetodoPago: string
+  Nombre: string
+  Apellido: string
+  RUT: string
+  NombrePlan: string
+  DuracionDias: number
+  FechaInicio: string
+  FechaVencimiento: string
 }
 
-export default function ComprobantePagoPage() {
-  const params = useParams();
-  const pagoID = params.pagoId as string;
-  
-  const [comprobante, setComprobante] = useState<ComprobantePago | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default function ComprobantePage() {
+  const params = useParams()
+  const pagoID = params.pagoID
+
+  const [comprobante, setComprobante] = useState<Comprobante | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
 
   useEffect(() => {
-    if (pagoID) {
-      fetchComprobante(pagoID);
-    }
-  }, [pagoID]);
+    const fetchComprobante = async () => {
+      try {
+        console.log("[v0] Fetching pago detail for ID:", pagoID)
+        const response = await fetch(`/api/pagos/obtener?id=${pagoID}`)
+        console.log("[v0] Response status:", response.status)
 
-  const fetchComprobante = async (id: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/pagos/receipt?pagoID=${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setComprobante(data);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || "No se pudo cargar el comprobante.");
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const data = await response.json()
+        console.log("[v0] Data loaded successfully:", data)
+        setComprobante(data)
+        setError("")
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        console.error("[v0] Error al obtener comprobante:", errorMessage)
+        setError("Error al cargar el comprobante: " + errorMessage)
+      } finally {
+        setLoading(false)
       }
-    } catch (err) {
-      console.error("Error fetching comprobante:", err);
-      setError("Error de conexión al servidor.");
-    } finally {
-      setLoading(false);
     }
-  };
+
+    if (pagoID) {
+      fetchComprobante()
+    }
+  }, [pagoID])
 
   const formatDate = (dateString: string) => {
     try {
-      return new Date(dateString).toLocaleString('es-CL', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return new Date(dateString).toLocaleDateString("es-CL", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
     } catch {
-      return dateString;
+      return "N/A"
     }
-  };
-  
+  }
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("es-CL", {
+      style: "currency",
+      currency: "CLP",
+    }).format(amount)
+  }
+
   const handlePrint = () => {
-    window.print();
-  };
+    window.print()
+  }
 
   if (loading) {
     return (
@@ -79,98 +89,135 @@ export default function ComprobantePagoPage() {
           <p className="text-muted-foreground">Cargando comprobante...</p>
         </div>
       </DashboardLayout>
-    );
+    )
   }
 
-  if (error) {
+  if (error || !comprobante) {
     return (
       <DashboardLayout role="Administrador">
-        <div className="p-6 text-center text-red-600">
-          <p>Error: {error}</p>
+        <div className="space-y-4">
+          <Link href="/admin/pagos">
+            <Button variant="ghost" className="mb-4">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Volver al historial
+            </Button>
+          </Link>
+          <Card className="border-red-200 bg-red-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-red-700">
+                <AlertCircle className="h-5 w-5" />
+                Error al cargar comprobante
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-red-700">{error || "No se encontró el comprobante"}</p>
+              <p className="text-sm text-red-600 mt-2">ID de pago: {pagoID}</p>
+            </CardContent>
+          </Card>
         </div>
       </DashboardLayout>
-    );
-  }
-
-  if (!comprobante) {
-    return (
-      <DashboardLayout role="Administrador">
-        <div className="p-6 text-center text-gray-500">Comprobante no disponible.</div>
-      </DashboardLayout>
-    );
+    )
   }
 
   return (
     <DashboardLayout role="Administrador">
-      <div className="max-w-3xl mx-auto p-4 space-y-6">
-        <div className="flex justify-between items-center print:hidden">
+      <div className="space-y-6 max-w-3xl">
+        <div className="flex items-center justify-between">
+          <div>
             <h1 className="text-3xl font-bold">Comprobante de Pago</h1>
+            <p className="text-muted-foreground mt-1">Detalles del pago #{comprobante.PagoID}</p>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/admin/pagos">
+              <Button variant="outline">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Volver
+              </Button>
+            </Link>
             <Button onClick={handlePrint}>
-                <Printer className="w-4 h-4 mr-2" />
-                Imprimir / Guardar PDF
+              <Printer className="h-4 w-4 mr-2" />
+              Imprimir
             </Button>
+          </div>
         </div>
 
-        {/* Contenedor del Comprobante para Imprimir */}
-        <Card className="shadow-lg border-2 border-primary">
-          <CardHeader className="bg-primary text-white rounded-t-lg">
-            <CardTitle className="text-2xl flex items-center">
-                <Receipt className="w-6 h-6 mr-3" />
-                Recibo #{comprobante.PagoID}
-            </CardTitle>
+        <Card>
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100">
+            <CardTitle>Información del Socio</CardTitle>
           </CardHeader>
-          <CardContent className="p-6 space-y-6">
-            
-            {/* Sección de la Transacción */}
-            <div className="grid grid-cols-2 gap-4 border-b pb-4">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-2 gap-6">
               <div>
-                <p className="text-sm font-medium text-gray-500 flex items-center">
-                  <Calendar className="w-4 h-4 mr-2" /> Fecha de Pago
+                <p className="text-sm text-muted-foreground font-medium">Nombre</p>
+                <p className="text-lg font-semibold mt-1">
+                  {comprobante.Nombre} {comprobante.Apellido}
                 </p>
-                <p className="text-lg font-semibold">{formatDate(comprobante.FechaPago)}</p>
               </div>
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-500 flex items-center justify-end">
-                  <DollarSign className="w-4 h-4 mr-2" /> Medio de Pago
-                </p>
-                <p className="text-lg font-semibold">{comprobante.MedioPago}</p>
+              <div>
+                <p className="text-sm text-muted-foreground font-medium">RUT</p>
+                <p className="text-lg font-semibold mt-1">{comprobante.RUT}</p>
               </div>
             </div>
-
-            {/* Sección del Socio */}
-            <div className="space-y-2 border-b pb-4">
-              <h3 className="text-xl font-semibold flex items-center text-primary">
-                <User className="w-5 h-5 mr-2" /> Información del Socio
-              </h3>
-              <p><strong>Socio:</strong> {comprobante.SocioNombre} {comprobante.SocioApellido}</p>
-              <p><strong>RUT:</strong> {comprobante.SocioRUT}</p>
-              <p><strong>Email:</strong> {comprobante.SocioEmail}</p>
-            </div>
-
-            {/* Sección de Concepto y Monto */}
-            <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-primary">Detalle del Pago</h3>
-              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg">
-                <div>
-                  <p className="font-medium text-gray-600">Concepto</p>
-                  <p className="text-lg">{comprobante.Concepto}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-medium text-gray-600">Monto Pagado</p>
-                  <p className="text-3xl font-extrabold text-green-600">
-                    ${comprobante.MontoPago.toLocaleString('es-CL')}
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            <p className="text-center text-sm italic text-gray-400 pt-4">
-                Documento no válido como factura. Comprobante interno de transacción.
-            </p>
-
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100">
+            <CardTitle>Detalles del Pago</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div>
+                <p className="text-sm text-muted-foreground font-medium">Fecha de Pago</p>
+                <p className="text-lg font-semibold mt-1">{formatDate(comprobante.FechaPago)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground font-medium">Método de Pago</p>
+                <p className="text-lg font-semibold mt-1 capitalize">{comprobante.MetodoPago}</p>
+              </div>
+            </div>
+            <div className="border-t pt-6">
+              <p className="text-sm text-muted-foreground font-medium">Monto Pagado</p>
+              <p className="text-3xl font-bold text-primary mt-2">{formatCurrency(comprobante.Monto)}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100">
+            <CardTitle>Plan Asignado</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <div className="space-y-6">
+              <div>
+                <p className="text-sm text-muted-foreground font-medium">Plan</p>
+                <p className="text-2xl font-bold mt-1">{comprobante.NombrePlan}</p>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="border rounded-lg p-4 bg-muted/50">
+                  <p className="text-xs text-muted-foreground font-medium uppercase">Duración</p>
+                  <p className="text-xl font-bold mt-2">{comprobante.DuracionDias} días</p>
+                </div>
+                <div className="border rounded-lg p-4 bg-muted/50">
+                  <p className="text-xs text-muted-foreground font-medium uppercase">Inicio</p>
+                  <p className="text-sm font-semibold mt-2">{formatDate(comprobante.FechaInicio)}</p>
+                </div>
+                <div className="border rounded-lg p-4 bg-muted/50">
+                  <p className="text-xs text-muted-foreground font-medium uppercase">Vencimiento</p>
+                  <p className="text-sm font-semibold mt-2">{formatDate(comprobante.FechaVencimiento)}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <style>{`
+          @media print {
+            button { display: none; }
+            .sidebar { display: none; }
+          }
+        `}</style>
       </div>
     </DashboardLayout>
-  );
+  )
 }

@@ -1,26 +1,22 @@
 import { NextResponse } from "next/server"
 import { getConnection } from "@/lib/db"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const pool = await getConnection()
 
-    const result = await pool.request().query(`
+    const result = await pool.query(`
       SELECT 
         p.PagoID,
-        p.SocioID,
-        u.Nombre + ' ' + u.Apellido as NombreSocio,
-        p.Monto,
+        p.MontoPago as Monto,
         p.FechaPago,
-        p.MetodoPago,
-        p.Estado,
+        p.MedioPago as MetodoPago,
+        p.EstadoPago as Estado,
         p.Concepto,
-        pl.NombrePlan
+        pm.NombrePlan
       FROM Pagos p
-      INNER JOIN Socios s ON p.SocioID = s.SocioID
-      INNER JOIN Usuarios u ON s.UsuarioID = u.UsuarioID
-      LEFT JOIN Membresías m ON p.MembresíaID = m.MembresíaID
-      LEFT JOIN PlanesMembresía pl ON m.PlanID = pl.PlanID
+      LEFT JOIN Membresías m ON p.SocioID = m.SocioID
+      LEFT JOIN PlanesMembresía pm ON m.PlanID = pm.PlanID
       ORDER BY p.FechaPago DESC
     `)
 
