@@ -10,6 +10,8 @@ const config: sql.config = {
     encrypt: true,
     trustServerCertificate: true,
     enableArithAbort: true,
+    requestTimeout: 30000,
+    
   },
   pool: {
     max: 10,
@@ -30,6 +32,13 @@ export async function getConnection() {
   } catch (error) {
     console.error("Error conectando a SQL Server:", error)
     throw error
+  }
+}
+export const closeConnection = async () => {
+  if (pool) {
+    await pool.close()
+    pool = null
+    console.log("Conexión a SQL Server cerrada")
   }
 }
 

@@ -1,15 +1,16 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft, Printer, AlertCircle } from "lucide-react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
+import { DashboardLayout } from "@/components/dashboard-layout"
+import { Button } from "@/components/ui/button"
+import { ArrowLeft, Printer, CheckCircle2, Download } from "lucide-react"
 
-interface Comprobante {
+// Interfaz que coincide con tu API real (/api/pagos/obtener)
+interface ComprobanteData {
   PagoID: number
+  NumeroComprobante?: string
   FechaPago: string
   Monto: number
   MetodoPago: string
@@ -20,204 +21,226 @@ interface Comprobante {
   DuracionDias: number
   FechaInicio: string
   FechaVencimiento: string
+  Concepto?: string
 }
 
 export default function ComprobantePage() {
   const params = useParams()
-  const pagoID = params.pagoID
+  
+  // Recuperación robusta del ID (soporta [pagoId], [pagold] o [id])
+  // params puede ser string o array, nos aseguramos de tener un string limpio
+  const rawId = params?.pagoId || (params as any)?.pagold || (params as any)?.id
+  const pagoID = Array.isArray(rawId) ? rawId[0] : rawId
 
-  const [comprobante, setComprobante] = useState<Comprobante | null>(null)
+  const [data, setData] = useState<ComprobanteData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
   useEffect(() => {
     const fetchComprobante = async () => {
-      try {
-        console.log("[v0] Fetching pago detail for ID:", pagoID)
-        const response = await fetch(`/api/pagos/obtener?id=${pagoID}`)
-        console.log("[v0] Response status:", response.status)
+      if (!pagoID) return
 
+      try {
+        const response = await fetch(`/api/pagos/obtener?id=${pagoID}`)
+        
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          const errData = await response.json().catch(() => ({}))
+          throw new Error(errData.error || "No se pudo cargar el comprobante")
         }
 
-        const data = await response.json()
-        console.log("[v0] Data loaded successfully:", data)
-        setComprobante(data)
-        setError("")
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err)
-        console.error("[v0] Error al obtener comprobante:", errorMessage)
-        setError("Error al cargar el comprobante: " + errorMessage)
+        const jsonData = await response.json()
+        setData(jsonData)
+      } catch (err: any) {
+        console.error("Error cargando comprobante:", err)
+        setError(err.message || "Error desconocido")
       } finally {
         setLoading(false)
       }
     }
 
-    if (pagoID) {
-      fetchComprobante()
-    }
+    fetchComprobante()
   }, [pagoID])
-
-  const formatDate = (dateString: string) => {
-    try {
-      return new Date(dateString).toLocaleDateString("es-CL", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })
-    } catch {
-      return "N/A"
-    }
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-CL", {
-      style: "currency",
-      currency: "CLP",
-    }).format(amount)
-  }
 
   const handlePrint = () => {
     window.print()
   }
 
-  if (loading) {
-    return (
-      <DashboardLayout role="Administrador">
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Cargando comprobante...</p>
-        </div>
-      </DashboardLayout>
-    )
+  // Utilidades de formato
+  const formatDate = (d: string) => {
+    if (!d) return "-"
+    return new Date(d).toLocaleDateString("es-CL", { 
+      day: '2-digit', 
+      month: 'long', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
-  if (error || !comprobante) {
-    return (
-      <DashboardLayout role="Administrador">
-        <div className="space-y-4">
-          <Link href="/admin/pagos">
-            <Button variant="ghost" className="mb-4">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Volver al historial
-            </Button>
-          </Link>
-          <Card className="border-red-200 bg-red-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-red-700">
-                <AlertCircle className="h-5 w-5" />
-                Error al cargar comprobante
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-red-700">{error || "No se encontró el comprobante"}</p>
-              <p className="text-sm text-red-600 mt-2">ID de pago: {pagoID}</p>
-            </CardContent>
-          </Card>
-        </div>
-      </DashboardLayout>
-    )
+  const formatMoney = (m: number) => {
+    return new Intl.NumberFormat("es-CL", { 
+      style: "currency", 
+      currency: "CLP" 
+    }).format(m)
   }
+
+  if (loading) return (
+    <DashboardLayout role="Administrador">
+       <div className="flex h-[50vh] items-center justify-center flex-col gap-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+          <p className="text-slate-500">Generando documento...</p>
+       </div>
+    </DashboardLayout>
+  )
+
+  if (error || !data) return (
+    <DashboardLayout role="Administrador">
+       <div className="max-w-md mx-auto mt-10 p-6 bg-red-50 border border-red-200 rounded-lg text-center">
+         <h3 className="text-red-800 font-bold mb-2">No se encontró el documento</h3>
+         <p className="text-red-600 text-sm mb-4">{error}</p>
+         <Link href="/admin/pagos">
+            <Button variant="outline" className="bg-white hover:bg-red-100 border-red-200 text-red-700">
+              <ArrowLeft className="mr-2 h-4 w-4"/> Volver al historial
+            </Button>
+         </Link>
+       </div>
+    </DashboardLayout>
+  )
 
   return (
     <DashboardLayout role="Administrador">
-      <div className="space-y-6 max-w-3xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Comprobante de Pago</h1>
-            <p className="text-muted-foreground mt-1">Detalles del pago #{comprobante.PagoID}</p>
+      {/* 1. BARRA DE HERRAMIENTAS (Visible solo en pantalla) */}
+      <div className="max-w-4xl mx-auto mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
+        <div>
+          <div className="flex items-center gap-2 text-green-600 mb-1">
+            <CheckCircle2 className="h-5 w-5" />
+            <span className="font-medium text-sm">Transacción Exitosa</span>
           </div>
-          <div className="flex gap-2">
-            <Link href="/admin/pagos">
-              <Button variant="outline">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Volver
-              </Button>
-            </Link>
-            <Button onClick={handlePrint}>
-              <Printer className="h-4 w-4 mr-2" />
-              Imprimir
-            </Button>
-          </div>
+          <h1 className="text-2xl font-bold text-slate-900">Comprobante #{data.PagoID}</h1>
         </div>
-
-        <Card>
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100">
-            <CardTitle>Información del Socio</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">Nombre</p>
-                <p className="text-lg font-semibold mt-1">
-                  {comprobante.Nombre} {comprobante.Apellido}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">RUT</p>
-                <p className="text-lg font-semibold mt-1">{comprobante.RUT}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100">
-            <CardTitle>Detalles del Pago</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-2 gap-6 mb-6">
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">Fecha de Pago</p>
-                <p className="text-lg font-semibold mt-1">{formatDate(comprobante.FechaPago)}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">Método de Pago</p>
-                <p className="text-lg font-semibold mt-1 capitalize">{comprobante.MetodoPago}</p>
-              </div>
-            </div>
-            <div className="border-t pt-6">
-              <p className="text-sm text-muted-foreground font-medium">Monto Pagado</p>
-              <p className="text-3xl font-bold text-primary mt-2">{formatCurrency(comprobante.Monto)}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100">
-            <CardTitle>Plan Asignado</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="space-y-6">
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">Plan</p>
-                <p className="text-2xl font-bold mt-1">{comprobante.NombrePlan}</p>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="border rounded-lg p-4 bg-muted/50">
-                  <p className="text-xs text-muted-foreground font-medium uppercase">Duración</p>
-                  <p className="text-xl font-bold mt-2">{comprobante.DuracionDias} días</p>
-                </div>
-                <div className="border rounded-lg p-4 bg-muted/50">
-                  <p className="text-xs text-muted-foreground font-medium uppercase">Inicio</p>
-                  <p className="text-sm font-semibold mt-2">{formatDate(comprobante.FechaInicio)}</p>
-                </div>
-                <div className="border rounded-lg p-4 bg-muted/50">
-                  <p className="text-xs text-muted-foreground font-medium uppercase">Vencimiento</p>
-                  <p className="text-sm font-semibold mt-2">{formatDate(comprobante.FechaVencimiento)}</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <style>{`
-          @media print {
-            button { display: none; }
-            .sidebar { display: none; }
-          }
-        `}</style>
+        <div className="flex gap-2">
+          <Link href="/admin/pagos/procesar">
+            <Button variant="outline">
+              <ArrowLeft className="w-4 h-4 mr-2" /> Nuevo Pago
+            </Button>
+          </Link>
+          <Button onClick={handlePrint} className="bg-slate-900 text-white hover:bg-slate-800">
+            <Printer className="w-4 h-4 mr-2" /> Imprimir / PDF
+          </Button>
+        </div>
       </div>
+
+      {/* 2. DISEÑO DEL DOCUMENTO (Papel A4 visual) */}
+      <div className="flex justify-center print:block print:w-full print:m-0">
+        <div className="bg-white shadow-xl print:shadow-none w-full max-w-[21cm] min-h-[14cm] p-8 md:p-12 border border-slate-200 print:border-none relative">
+          
+          {/* Encabezado */}
+          <div className="flex justify-between items-start border-b border-slate-100 pb-8 mb-8">
+            <div className="flex items-center gap-4">
+              {/* Logo / Icono */}
+              <div className="h-16 w-16 bg-slate-900 text-white rounded-lg flex items-center justify-center">
+                <span className="font-bold text-2xl tracking-tighter">MF</span>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">MUNDO FITNESS</h2>
+                <p className="text-sm text-slate-500">Chimbarongo, Región de O'Higgins</p>
+                <p className="text-sm text-slate-500">RUT: 76.XXX.XXX-X</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">RECIBO DE PAGO</p>
+              <p className="text-lg font-mono font-medium text-slate-700">{data.NumeroComprobante || `REF-${data.PagoID}`}</p>
+              <p className="text-sm text-slate-500 mt-1">{formatDate(data.FechaPago)}</p>
+            </div>
+          </div>
+
+          {/* Información Principal */}
+          <div className="grid grid-cols-2 gap-10 mb-10">
+            <div>
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Cliente</h3>
+              <div className="space-y-1">
+                <p className="font-bold text-lg text-slate-900">{data.Nombre} {data.Apellido}</p>
+                <p className="text-slate-600">RUT: {data.RUT}</p>
+                <p className="text-slate-600 text-sm">ID Socio: #{data.PagoID /* Usar SocioID si está disponible */}</p>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Resumen de Pago</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between border-b border-slate-50 pb-1">
+                  <span className="text-slate-600">Método:</span>
+                  <span className="font-medium capitalize text-slate-900">{data.MetodoPago}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-50 pb-1">
+                  <span className="text-slate-600">Estado:</span>
+                  <span className="font-medium text-green-600 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Pagado
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla de Detalle */}
+          <div className="mb-8">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50 text-left">
+                  <th className="py-3 px-4 font-semibold text-slate-600 text-xs uppercase rounded-l-md">Concepto</th>
+                  <th className="py-3 px-4 font-semibold text-slate-600 text-xs uppercase text-right rounded-r-md">Importe</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                <tr>
+                  <td className="py-4 px-4">
+                    <p className="font-bold text-slate-800">{data.NombrePlan}</p>
+                    <p className="text-sm text-slate-500 mt-0.5">{data.Concepto || `Servicio de Gimnasio - ${data.DuracionDias} días`}</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                       Vigencia: {data.FechaInicio ? new Date(data.FechaInicio).toLocaleDateString() : '-'} al {data.FechaVencimiento ? new Date(data.FechaVencimiento).toLocaleDateString() : '-'}
+                    </p>
+                  </td>
+                  <td className="py-4 px-4 text-right align-top">
+                    <span className="font-bold text-slate-800">{formatMoney(data.Monto)}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Totales */}
+          <div className="flex justify-end border-t border-slate-200 pt-6">
+            <div className="w-64">
+              <div className="flex justify-between items-end">
+                <span className="text-xl font-bold text-slate-900">Total Pagado</span>
+                <span className="text-2xl font-bold text-slate-900">{formatMoney(data.Monto)}</span>
+              </div>
+              <p className="text-right text-xs text-slate-400 mt-1">Pesos Chilenos (CLP)</p>
+            </div>
+          </div>
+
+          {/* Footer del Documento */}
+          <div className="mt-16 pt-8 border-t border-dashed border-slate-300 text-center">
+            <p className="text-xs text-slate-400 mb-2">Gracias por su preferencia</p>
+            <p className="text-[10px] text-slate-300 uppercase">Documento generado electrónicamente el {new Date().toLocaleDateString()}</p>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Estilos de impresión para ocultar el dashboard al imprimir */}
+      <style jsx global>{`
+        @media print {
+          @page { margin: 0; size: auto; }
+          body { background: white; }
+          /* Ocultar elementos de navegación/sidebar del layout */
+          nav, aside, header, footer, .print\\:hidden { display: none !important; }
+          /* Asegurar que el contenido principal ocupe todo */
+          main, body > div { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: none !important; }
+          .print\\:block { display: block !important; }
+          .print\\:shadow-none { box-shadow: none !important; }
+          .print\\:border-none { border: none !important; }
+        }
+      `}</style>
     </DashboardLayout>
   )
 }
