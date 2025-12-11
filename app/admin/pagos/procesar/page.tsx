@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -40,7 +40,7 @@ const METODOS_PAGO = [
   },
 ]
 
-export default function ProcesarPagoPage() {
+function ProcesarPagoContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -74,7 +74,7 @@ export default function ProcesarPagoPage() {
 
   const fetchSocio = async () => {
     try {
-      const response = await fetch(`/api/socio?id=${socioID}`)
+      const response = await fetch(`/api/admin/socios?id=${socioID}`)
       if (response.ok) {
         const data = await response.json()
         setSocio(Array.isArray(data) ? data[0] : data)
@@ -99,27 +99,38 @@ export default function ProcesarPagoPage() {
     setError("")
 
     try {
-      const payload = {
-        socioID: socio.SocioID,
-        planID: plan.PlanID,
-        monto: plan.Precio,
-        medioPago: medioPago,
-        usuarioID: 1,
-      }
-
-      const response = await fetch("/api/pagos/procesar", {
+      const pagoResponse = await fetch("/api/admin/pagos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          socioID: socio.SocioID,
+          monto: plan.Precio,
+          metodoPago: medioPago,
+          concepto: `Membresía - ${plan.NombrePlan}`,
+        }),
       })
 
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.detalle || "Error al procesar el pago")
+      if (!pagoResponse.ok) {
+        throw new Error("Error al registrar el pago")
       }
 
-      router.push(`/admin/pagos/${result.pagoID}`)
+      const pagoData = await pagoResponse.json()
+
+      const membresiaResponse = await fetch("/api/admin/membresias/asignar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          socioID: socio.SocioID,
+          planID: plan.PlanID,
+          pagoID: pagoData.pagoID,
+        }),
+      })
+
+      if (!membresiaResponse.ok) {
+        throw new Error("Error al asignar la membresía")
+      }
+
+      router.push(`/admin/pagos/${pagoData.pagoID}`)
     } catch (err: any) {
       console.error("Error:", err)
       setError(err.message || "Error de conexión al servidor")
@@ -150,7 +161,6 @@ export default function ProcesarPagoPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
       <div className="max-w-2xl mx-auto px-4 py-8">
-        {/* Header */}
         <div className="mb-8">
           <Link href="/admin/socios">
             <Button variant="ghost" className="mb-6 hover:bg-white/80 transition-colors">
@@ -166,7 +176,6 @@ export default function ProcesarPagoPage() {
         </div>
 
         <div className="space-y-6">
-          {/* Tarjeta del Cliente */}
           <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-shadow bg-white/80 backdrop-blur">
             <CardHeader className="pb-3 border-b bg-slate-50/50">
               <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2">
@@ -193,7 +202,6 @@ export default function ProcesarPagoPage() {
             </CardContent>
           </Card>
 
-          {/* Tarjeta del Plan */}
           <Card className="border-blue-200/60 shadow-lg hover:shadow-xl transition-shadow bg-gradient-to-br from-white to-blue-50/30 backdrop-blur">
             <CardHeader className="pb-3 border-b border-blue-100">
               <CardTitle className="text-sm font-semibold text-blue-900 uppercase tracking-wide">
@@ -229,7 +237,6 @@ export default function ProcesarPagoPage() {
             </CardContent>
           </Card>
 
-          {/* Método de Pago */}
           <div className="space-y-4">
             <label className="block text-sm font-bold text-slate-900 uppercase tracking-wide">
               Seleccionar Método de Pago
@@ -267,7 +274,6 @@ export default function ProcesarPagoPage() {
             </div>
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded-lg animate-in slide-in-from-top duration-300">
               <div className="flex items-start gap-3">
@@ -288,7 +294,6 @@ export default function ProcesarPagoPage() {
             </div>
           )}
 
-          {/* Botón de Confirmación */}
           <Button
             onClick={handleProcesarPago}
             disabled={loading || !medioPago}
@@ -309,5 +314,19 @@ export default function ProcesarPagoPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ProcesarPagoPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 flex items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <ProcesarPagoContent />
+    </Suspense>
   )
 }
